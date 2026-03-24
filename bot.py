@@ -8,7 +8,7 @@ import os
 import json
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -16,8 +16,8 @@ from aiogram.exceptions import TelegramBadRequest
 
 # ---------- КОНФИГУРАЦИЯ ----------
 BOT_TOKEN = "8772526252:AAFz_2vhmyWhQTb8Vs7BUtsjulraU7ONf9M"  # Замените на реальный токен
-BOT_USERNAME = "Aim_NooB_bot"
-ADMIN_IDS = [8346538289,8205396116]  # ID администраторов (замените на свои)
+BOT_USERNAME = "AimNoob_freekey_bot"
+ADMIN_IDS = [8346538289,8205396116]  # Замените на ваш ID
 
 # Путь к картинке
 IMAGE_PATH = "images/aimnoob.jpg"
@@ -101,24 +101,12 @@ def init_db():
         )
     ''')
     
-    # Таблица заявок на подписку
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS subscription_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            channel_id TEXT,
-            request_date TIMESTAMP,
-            approved INTEGER DEFAULT 0
-        )
-    ''')
-    
     # Добавляем тестовые каналы если таблица пустая
     cur.execute("SELECT COUNT(*) FROM channels")
     if cur.fetchone()[0] == 0:
         default_channels = [
             ("AimNoob Новости", "https://t.me/aimnoob_news", "@aimnoob_news"),
             ("AimNoob Читы", "https://t.me/aimnoob_cheats", "@aimnoob_cheats"),
-            ("AimNoob VIP", "https://t.me/aimnoob_vip", "@aimnoob_vip")
         ]
         for name, url, chat_id in default_channels:
             cur.execute(
@@ -244,7 +232,6 @@ async def check_subscriptions(user_id):
     subscribed_channels = []
     not_subscribed = []
     
-    # Получаем сохраненные заявки пользователя
     user = get_user(user_id)
     requests = json.loads(user[10]) if user and len(user) > 10 else []
     
@@ -253,7 +240,6 @@ async def check_subscriptions(user_id):
         channel_name = channel[1]
         channel_url = channel[2]
         
-        # Проверяем, есть ли подтвержденная заявка
         if str(channel_id) in requests:
             subscribed_channels.append({
                 "name": channel_name,
@@ -295,7 +281,6 @@ def add_subscription_request(user_id, channel_id):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     
-    # Получаем текущие заявки пользователя
     cur.execute("SELECT subscription_requests FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
     if row:
@@ -363,11 +348,13 @@ def get_statistics():
 # ---------- КЛАВИАТУРЫ ----------
 def get_main_keyboard():
     """Главное меню"""
-    return InlineKeyboardMarkup(inline_keyboard=[
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎮 Получить бесплатный чит", callback_data="get_free_cheat")],
-        [InlineKeyboardButton(text="⭐ Купить премиум версию", callback_data="buy_premium")],
-        [InlineKeyboardButton(text="👑 Админ панель", callback_data="admin_panel")]  # Только для админов
+        [InlineKeyboardButton(text="⭐ Купить премиум версию", callback_data="buy_premium")]
     ])
+    
+    # Добавляем кнопку админки только если пользователь админ
+    return keyboard
 
 def get_admin_keyboard():
     """Админ панель"""
@@ -377,10 +364,10 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="➖ Удалить канал", callback_data="admin_remove_channel")],
         [InlineKeyboardButton(text="📋 Список каналов", callback_data="admin_list_channels")],
         [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="back_to_main")]
     ])
 
-def get_cheat_menu(user_id):
+def get_cheat_menu():
     """Меню после получения чита"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👥 Проверить рефералов", callback_data="check_referrals")],
@@ -390,7 +377,7 @@ def get_cheat_menu(user_id):
     ])
 
 def get_subscription_keyboard(not_subscribed_channels):
-    """Клавиатура для подписки с кнопками на каждый канал"""
+    """Клавиатура для подписки"""
     keyboard = []
     
     for channel in not_subscribed_channels:
@@ -400,10 +387,9 @@ def get_subscription_keyboard(not_subscribed_channels):
                 url=channel['url']
             )
         ])
-        # Добавляем кнопку отправки заявки
         keyboard.append([
             InlineKeyboardButton(
-                text=f"✅ Я отправил заявку в {channel['name']}", 
+                text=f"✅ Отправить заявку в {channel['name']}", 
                 callback_data=f"request_sub_{channel['chat_id']}"
             )
         ])
@@ -440,18 +426,29 @@ def get_subscription_status_keyboard(subscribed, not_subscribed):
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-async def safe_edit_caption(message, caption, reply_markup):
+async def safe_edit_message(message, text=None, caption=None, reply_markup=None, photo=None):
     """Безопасное редактирование сообщения"""
     try:
-        await message.edit_caption(
-            caption=caption,
-            reply_markup=reply_markup
-        )
+        if photo:
+            await message.edit_media(
+                media=InputMediaPhoto(media=photo, caption=caption),
+                reply_markup=reply_markup
+            )
+        elif caption is not None:
+            await message.edit_caption(
+                caption=caption,
+                reply_markup=reply_markup
+            )
+        elif text is not None:
+            await message.edit_text(
+                text=text,
+                reply_markup=reply_markup
+            )
     except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
-        else:
+        if "message is not modified" not in str(e):
             raise e
+    except Exception as e:
+        logging.error(f"Error editing message: {e}")
 
 # ---------- ОБРАБОТЧИКИ ----------
 @dp.message(CommandStart())
@@ -475,47 +472,42 @@ async def start_command(message: Message, command: CommandStart):
         if key:
             await bot.send_message(
                 referrer_id,
-                f"🎉 Поздравляем! Вы пригласили друга и получили ключ активации!\n\n"
-                f"🔑 Ваш ключ: `{key}`\n\n"
-                f"⏰ Ключ действителен 7 дней.",
+                f"🎉 Поздравляем! Вы пригласили друга и получили ключ!\n\n🔑 Ключ: `{key}`\n⏰ Действует 7 дней.",
                 parse_mode="Markdown"
             )
     
+    # Отправляем приветствие
     try:
         if os.path.exists(IMAGE_PATH):
             photo = FSInputFile(IMAGE_PATH)
-            caption = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\n"
-            caption += "🎯 Лучшие читы для Standoff 2\n"
-            caption += "🔥 AIMBOT | WALLHACK | ESP | NO RECOIL\n\n"
-            caption += "Выберите действие:"
+            caption = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\n🎯 Лучшие читы для Standoff 2\n🔥 AIMBOT | WALLHACK | ESP | NO RECOIL\n\nВыберите действие:"
             
-            await message.answer_photo(
-                photo=photo, 
-                caption=caption, 
-                reply_markup=get_main_keyboard()
-            )
+            # Добавляем кнопку админки если нужно
+            keyboard = get_main_keyboard()
+            if user_id in ADMIN_IDS:
+                keyboard.inline_keyboard.append([InlineKeyboardButton(text="👑 Админ панель", callback_data="admin_panel")])
+            
+            await message.answer_photo(photo=photo, caption=caption, reply_markup=keyboard)
         else:
-            caption = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:"
-            await message.answer(caption, reply_markup=get_main_keyboard())
+            text = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:"
+            keyboard = get_main_keyboard()
+            if user_id in ADMIN_IDS:
+                keyboard.inline_keyboard.append([InlineKeyboardButton(text="👑 Админ панель", callback_data="admin_panel")])
+            await message.answer(text, reply_markup=keyboard)
     except Exception as e:
-        logging.error(f"Ошибка отправки картинки: {e}")
-        await message.answer(
-            f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:",
-            reply_markup=get_main_keyboard()
-        )
+        logging.error(f"Error: {e}")
+        await message.answer("Добро пожаловать!", reply_markup=get_main_keyboard())
 
 @dp.callback_query(lambda c: c.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
     """Админ панель"""
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ У вас нет доступа к админ-панели!", show_alert=True)
+        await callback.answer("❌ Нет доступа!", show_alert=True)
         return
     
-    text = "👑 **АДМИН ПАНЕЛЬ** 👑\n\n"
-    text += "Выберите действие:"
-    
-    await callback.message.edit_caption(
-        caption=text,
+    await safe_edit_message(
+        callback.message,
+        caption="👑 **АДМИН ПАНЕЛЬ** 👑\n\nВыберите действие:",
         reply_markup=get_admin_keyboard()
     )
     await callback.answer()
@@ -524,25 +516,26 @@ async def admin_panel(callback: CallbackQuery):
 async def admin_stats(callback: CallbackQuery):
     """Статистика"""
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Доступ запрещен!", show_alert=True)
+        await callback.answer("❌ Нет доступа!", show_alert=True)
         return
     
     stats = get_statistics()
     
-    text = "📊 **СТАТИСТИКА БОТА** 📊\n\n"
+    text = f"📊 **СТАТИСТИКА БОТА** 📊\n\n"
     text += f"👥 Всего пользователей: {stats['total_users']}\n"
     text += f"📥 Получили ссылку: {stats['got_link']}\n"
     text += f"👨‍👧‍👦 Всего рефералов: {stats['total_referrals']}\n"
     text += f"🔑 Активированных ключей: {stats['activated_keys']}\n"
     text += f"⭐ Премиум пользователей: {stats['premium_users']}\n"
-    text += f"📢 Каналов для подписки: {len(get_channels())}\n"
+    text += f"📢 Каналов для подписки: {len(get_channels())}"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="admin_stats")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
     
-    await callback.message.edit_caption(
+    await safe_edit_message(
+        callback.message,
         caption=text,
         reply_markup=keyboard
     )
@@ -552,7 +545,7 @@ async def admin_stats(callback: CallbackQuery):
 async def admin_list_channels(callback: CallbackQuery):
     """Список каналов"""
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Доступ запрещен!", show_alert=True)
+        await callback.answer("❌ Нет доступа!", show_alert=True)
         return
     
     channels = get_channels()
@@ -562,17 +555,14 @@ async def admin_list_channels(callback: CallbackQuery):
     else:
         text = "📢 **СПИСОК КАНАЛОВ** 📢\n\n"
         for ch in channels:
-            text += f"🆔 ID: {ch[0]}\n"
-            text += f"📛 Название: {ch[1]}\n"
-            text += f"🔗 Ссылка: {ch[2]}\n"
-            text += f"💬 Chat ID: {ch[3]}\n"
-            text += "─" * 20 + "\n"
+            text += f"🆔 ID: {ch[0]}\n📛 Название: {ch[1]}\n🔗 Ссылка: {ch[2]}\n💬 Chat ID: {ch[3]}\n" + "─" * 20 + "\n"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
     
-    await callback.message.edit_caption(
+    await safe_edit_message(
+        callback.message,
         caption=text,
         reply_markup=keyboard
     )
@@ -582,10 +572,11 @@ async def admin_list_channels(callback: CallbackQuery):
 async def admin_add_channel(callback: CallbackQuery, state: FSMContext):
     """Добавление канала"""
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Доступ запрещен!", show_alert=True)
+        await callback.answer("❌ Нет доступа!", show_alert=True)
         return
     
-    await callback.message.edit_caption(
+    await safe_edit_message(
+        callback.message,
         caption="➕ **ДОБАВЛЕНИЕ КАНАЛА**\n\nВведите название канала:"
     )
     await state.set_state(AddChannelState.waiting_for_name)
@@ -593,106 +584,69 @@ async def admin_add_channel(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(AddChannelState.waiting_for_name)
 async def process_channel_name(message: Message, state: FSMContext):
-    """Обработка названия канала"""
     await state.update_data(name=message.text)
     await message.answer("📝 Введите ссылку на канал (https://t.me/...):")
     await state.set_state(AddChannelState.waiting_for_url)
 
 @dp.message(AddChannelState.waiting_for_url)
 async def process_channel_url(message: Message, state: FSMContext):
-    """Обработка ссылки канала"""
     await state.update_data(url=message.text)
     await message.answer("🆔 Введите chat_id канала (например: @channel или -1001234567890):")
     await state.set_state(AddChannelState.waiting_for_chat_id)
 
 @dp.message(AddChannelState.waiting_for_chat_id)
 async def process_channel_chat_id(message: Message, state: FSMContext):
-    """Обработка chat_id канала"""
     data = await state.get_data()
-    
     add_channel(data['name'], data['url'], message.text)
-    
     await message.answer(f"✅ Канал '{data['name']}' успешно добавлен!")
     await state.clear()
-    
-    # Возвращаем в админ-панель
-    if os.path.exists(IMAGE_PATH):
-        photo = FSInputFile(IMAGE_PATH)
-        await message.answer_photo(
-            photo=photo,
-            caption="👑 Админ панель",
-            reply_markup=get_admin_keyboard()
-        )
-    else:
-        await message.answer(
-            "👑 Админ панель",
-            reply_markup=get_admin_keyboard()
-        )
 
 @dp.callback_query(lambda c: c.data == "admin_remove_channel")
 async def admin_remove_channel(callback: CallbackQuery, state: FSMContext):
     """Удаление канала"""
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Доступ запрещен!", show_alert=True)
+        await callback.answer("❌ Нет доступа!", show_alert=True)
         return
     
     channels = get_channels()
-    
     if not channels:
         await callback.answer("Нет каналов для удаления!", show_alert=True)
         return
     
-    text = "➖ **УДАЛЕНИЕ КАНАЛА**\n\n"
-    text += "Введите ID канала для удаления:\n\n"
+    text = "➖ **УДАЛЕНИЕ КАНАЛА**\n\nВведите ID канала для удаления:\n\n"
     for ch in channels:
         text += f"ID: {ch[0]} - {ch[1]}\n"
     
-    await callback.message.edit_caption(caption=text)
+    await safe_edit_message(callback.message, caption=text)
     await state.set_state(RemoveChannelState.waiting_for_channel_id)
     await callback.answer()
 
 @dp.message(RemoveChannelState.waiting_for_channel_id)
 async def process_remove_channel(message: Message, state: FSMContext):
-    """Обработка удаления канала"""
     try:
         channel_id = int(message.text)
         remove_channel(channel_id)
         await message.answer(f"✅ Канал с ID {channel_id} успешно удален!")
     except:
         await message.answer("❌ Ошибка! Введите корректный ID канала.")
-    
     await state.clear()
-    
-    # Возвращаем в админ-панель
-    if os.path.exists(IMAGE_PATH):
-        photo = FSInputFile(IMAGE_PATH)
-        await message.answer_photo(
-            photo=photo,
-            caption="👑 Админ панель",
-            reply_markup=get_admin_keyboard()
-        )
-    else:
-        await message.answer(
-            "👑 Админ панель",
-            reply_markup=get_admin_keyboard()
-        )
 
 @dp.callback_query(lambda c: c.data == "admin_broadcast")
 async def admin_broadcast(callback: CallbackQuery, state: FSMContext):
-    """Рассылка сообщений"""
+    """Рассылка"""
     if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Доступ запрещен!", show_alert=True)
+        await callback.answer("❌ Нет доступа!", show_alert=True)
         return
     
-    await callback.message.edit_caption(
-        caption="📢 **РАССЫЛКА**\n\nОтправьте сообщение для рассылки всем пользователям:"
+    await safe_edit_message(
+        callback.message,
+        caption="📢 **РАССЫЛКА**\n\nОтправьте сообщение для рассылки:"
     )
     await state.set_state(SendMessageState.waiting_for_message)
     await callback.answer()
 
 @dp.message(SendMessageState.waiting_for_message)
 async def process_broadcast(message: Message, state: FSMContext):
-    """Обработка рассылки"""
     await message.answer("🔄 Начинаю рассылку...")
     
     conn = sqlite3.connect(DB_NAME)
@@ -712,138 +666,210 @@ async def process_broadcast(message: Message, state: FSMContext):
                 message_id=message.message_id
             )
             success += 1
-            await asyncio.sleep(0.05)  # Защита от флуда
+            await asyncio.sleep(0.05)
         except:
             fail += 1
     
     await message.answer(f"✅ Рассылка завершена!\n\n📤 Отправлено: {success}\n❌ Ошибок: {fail}")
     await state.clear()
+
+@dp.callback_query(lambda c: c.data == "get_free_cheat")
+async def get_free_cheat(callback: CallbackQuery):
+    """Получение бесплатного чита"""
+    user_id = callback.from_user.id
+    user = get_user(user_id)
     
-    # Возвращаем в админ-панель
-    if os.path.exists(IMAGE_PATH):
-        photo = FSInputFile(IMAGE_PATH)
-        await message.answer_photo(
-            photo=photo,
-            caption="👑 Админ панель",
-            reply_markup=get_admin_keyboard()
-        )
+    if user and user[3] == 1:
+        text = f"✅ Вы уже получили ссылку!\n\n🔗 {DOWNLOAD_LINK}\n\n👥 Рефералов: {get_referral_count(user_id)}/3"
+        await safe_edit_message(callback.message, caption=text, reply_markup=get_cheat_menu())
+        await callback.answer()
+        return
+    
+    subscribed, not_subscribed = await check_subscriptions(user_id)
+    
+    if not not_subscribed:
+        set_download_link_got(user_id)
+        text = f"✅ Подписка подтверждена!\n\n🔗 Ссылка: {DOWNLOAD_LINK}\n\n👥 Рефералов: {get_referral_count(user_id)}/3"
+        await safe_edit_message(callback.message, caption=text, reply_markup=get_cheat_menu())
     else:
-        await message.answer(
-            "👑 Админ панель",
-            reply_markup=get_admin_keyboard()
-        )
+        text = "📢 **ПОДПИШИТЕСЬ НА КАНАЛЫ:**\n\n"
+        for ch in not_subscribed:
+            text += f"❌ {ch['name']}\n"
+        text += "\n👇 Нажмите на кнопки для подписки:"
+        await safe_edit_message(callback.message, caption=text, reply_markup=get_subscription_keyboard(not_subscribed))
+    
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "check_subscription")
+async def check_subscription(callback: CallbackQuery):
+    """Проверка подписки"""
+    user_id = callback.from_user.id
+    await callback.answer("🔍 Проверяю...")
+    
+    subscribed, not_subscribed = await check_subscriptions(user_id)
+    
+    if not not_subscribed:
+        user = get_user(user_id)
+        if user and user[3] == 0:
+            set_download_link_got(user_id)
+            text = f"✅ Поздравляем! Вы подписаны!\n\n🔗 Ссылка: {DOWNLOAD_LINK}\n\n👥 Рефералов: {get_referral_count(user_id)}/3"
+            await safe_edit_message(callback.message, caption=text, reply_markup=get_cheat_menu())
+        else:
+            await safe_edit_message(callback.message, caption=f"✅ У вас уже есть доступ!\n\n🔗 {DOWNLOAD_LINK}", reply_markup=get_cheat_menu())
+    else:
+        text = "📢 **СТАТУС ПОДПИСКИ:**\n\n"
+        for ch in subscribed:
+            text += f"✅ {ch['name']}\n"
+        for ch in not_subscribed:
+            text += f"❌ {ch['name']}\n"
+        text += "\n👇 Подпишитесь на недостающие каналы:"
+        await safe_edit_message(callback.message, caption=text, reply_markup=get_subscription_status_keyboard(subscribed, not_subscribed))
+    
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "get_cheat_after_subscribe")
+async def get_cheat_after_subscribe(callback: CallbackQuery):
+    """Получение чита после подписки"""
+    user_id = callback.from_user.id
+    await callback.answer("🔍 Проверяю...")
+    
+    subscribed, not_subscribed = await check_subscriptions(user_id)
+    
+    if not not_subscribed:
+        set_download_link_got(user_id)
+        text = f"✅ Поздравляем! Вот ваша ссылка:\n\n🔗 {DOWNLOAD_LINK}\n\n👥 Рефералов: {get_referral_count(user_id)}/3"
+        await safe_edit_message(callback.message, caption=text, reply_markup=get_cheat_menu())
+    else:
+        await callback.answer("❌ Вы не подписаны на все каналы!", show_alert=True)
+    
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "check_referrals")
+async def check_referrals(callback: CallbackQuery):
+    """Проверка рефералов"""
+    user_id = callback.from_user.id
+    count = get_referral_count(user_id)
+    user = get_user(user_id)
+    
+    if count >= 3:
+        if user and user[4] == 1:
+            text = f"✅ Вы уже получили ключ!\n\n👥 Рефералов: {count}"
+        else:
+            key = generate_and_send_key(user_id)
+            if key:
+                text = f"🎉 Поздравляем! Вы пригласили {count} друзей!\n\n🔑 Ваш ключ: `{key}`\n⏰ Действует 7 дней"
+                await callback.message.answer(text, parse_mode="Markdown")
+                return
+    else:
+        text = f"👥 Рефералов: {count}/3\n\n🔗 Ваша ссылка: {get_referral_link(user_id)}\n\nПригласите еще {3-count} друзей!"
+    
+    await callback.message.answer(text)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "copy_link")
+async def copy_link(callback: CallbackQuery):
+    """Копирование ссылки"""
+    user_id = callback.from_user.id
+    link = get_referral_link(user_id)
+    await callback.message.answer(f"🔗 Ваша реферальная ссылка:\n\n{link}")
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "refresh_menu")
+async def refresh_menu(callback: CallbackQuery):
+    """Обновление меню"""
+    user_id = callback.from_user.id
+    text = f"✅ Ваш доступ активен!\n\n🔗 {DOWNLOAD_LINK}\n\n👥 Рефералов: {get_referral_count(user_id)}/3"
+    await safe_edit_message(callback.message, caption=text, reply_markup=get_cheat_menu())
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "buy_premium")
+async def buy_premium(callback: CallbackQuery):
+    """Покупка премиум"""
+    text = f"⭐ **ПРЕМИУМ ВЕРСИЯ** ⭐\n\n🔥 Функции:\n• AIMBOT\n• WALLHACK\n• ESP\n• NO RECOIL\n\n💰 Цена: 499 ₽/мес\n\n💬 По вопросам: @AimNoobSupport"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/AimNoobSupport")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+    ])
+    
+    await callback.message.answer(text, reply_markup=keyboard)
+    await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("request_sub_"))
 async def subscription_request(callback: CallbackQuery):
-    """Обработка заявки на подписку"""
+    """Заявка на подписку"""
     user_id = callback.from_user.id
     channel_id = callback.data.replace("request_sub_", "")
     
     if add_subscription_request(user_id, channel_id):
-        await callback.answer(
-            "✅ Заявка на подписку принята!\n"
-            "После подтверждения администратором вы получите доступ.",
-            show_alert=True
-        )
+        await callback.answer("✅ Заявка принята!", show_alert=True)
         
-        # Уведомляем админов
-        for admin_id in ADMIN_IDS:
-            await bot.send_message(
-                admin_id,
-                f"📢 Новая заявка на подписку!\n\n"
-                f"👤 Пользователь: {callback.from_user.id}\n"
-                f"📛 Username: @{callback.from_user.username or 'NoUsername'}\n"
-                f"📢 Канал: {channel_id}\n\n"
-                f"Заявка автоматически принята и добавлена в базу."
-            )
+        # Обновляем статус
+        subscribed, not_subscribed = await check_subscriptions(user_id)
+        if not not_subscribed:
+            set_download_link_got(user_id)
+            text = f"✅ Поздравляем! Вот ваша ссылка:\n\n🔗 {DOWNLOAD_LINK}"
+            await safe_edit_message(callback.message, caption=text, reply_markup=get_cheat_menu())
+        else:
+            text = "📢 Статус подписки:\n\n"
+            for ch in subscribed:
+                text += f"✅ {ch['name']}\n"
+            for ch in not_subscribed:
+                text += f"❌ {ch['name']}\n"
+            await safe_edit_message(callback.message, caption=text, reply_markup=get_subscription_status_keyboard(subscribed, not_subscribed))
     else:
-        await callback.answer("❌ Ошибка! Возможно, вы уже подавали заявку.", show_alert=True)
-    
-    # Обновляем проверку подписки
-    subscribed, not_subscribed = await check_subscriptions(user_id)
-    
-    if not not_subscribed:
-        text = f"✅ Поздравляем! Теперь вы подписаны на все каналы!\n\n"
-        text += f"🔗 Ссылка на скачивание:\n{DOWNLOAD_LINK}"
-        
-        await safe_edit_caption(
-            callback.message,
-            text,
-            get_cheat_menu(user_id)
-        )
-    else:
-        text = "📢 СТАТУС ПОДПИСКИ:\n\n"
-        for channel in subscribed:
-            text += f"✅ {channel['name']} - Подписан\n"
-        for channel in not_subscribed:
-            text += f"❌ {channel['name']} - НЕ ПОДПИСАН\n"
-        
-        if not_subscribed:
-            text += "\n👇 Подпишитесь на недостающие каналы или отправьте заявку:"
-        
-        await safe_edit_caption(
-            callback.message,
-            text,
-            get_subscription_status_keyboard(subscribed, not_subscribed)
-        )
+        await callback.answer("❌ Ошибка!", show_alert=True)
     
     await callback.answer()
-
-# Остальные обработчики (get_free_cheat, check_subscription, и т.д.) остаются теми же
-# Добавляем их здесь, но для краткости я их не дублирую
-# Они должны быть такими же, как в предыдущей версии, но с использованием новых функций
 
 @dp.callback_query(lambda c: c.data == "back_to_main")
 async def back_to_main(callback: CallbackQuery):
     """Возврат в главное меню"""
-    try:
-        if os.path.exists(IMAGE_PATH):
-            photo = FSInputFile(IMAGE_PATH)
-            caption = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\n"
-            caption += "🎯 Лучшие читы для Standoff 2\n"
-            caption += "🔥 AIMBOT | WALLHACK | ESP | NO RECOIL\n\n"
-            caption += "Выберите действие:"
-            
-            await callback.message.edit_media(
-                types.InputMediaPhoto(media=photo, caption=caption),
-                reply_markup=get_main_keyboard()
-            )
-        else:
-            await callback.message.edit_caption(
-                caption=f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:",
-                reply_markup=get_main_keyboard()
-            )
-    except Exception:
-        await callback.message.delete()
-        if os.path.exists(IMAGE_PATH):
-            photo = FSInputFile(IMAGE_PATH)
-            await callback.message.answer_photo(
-                photo=photo,
-                caption=f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:",
-                reply_markup=get_main_keyboard()
-            )
-        else:
-            await callback.message.answer(
-                f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:",
-                reply_markup=get_main_keyboard()
-            )
+    user_id = callback.from_user.id
+    
+    if os.path.exists(IMAGE_PATH):
+        photo = FSInputFile(IMAGE_PATH)
+        caption = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:"
+        keyboard = get_main_keyboard()
+        if user_id in ADMIN_IDS:
+            keyboard.inline_keyboard.append([InlineKeyboardButton(text="👑 Админ панель", callback_data="admin_panel")])
+        
+        await safe_edit_message(callback.message, photo=photo, caption=caption, reply_markup=keyboard)
+    else:
+        text = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:"
+        keyboard = get_main_keyboard()
+        if user_id in ADMIN_IDS:
+            keyboard.inline_keyboard.append([InlineKeyboardButton(text="👑 Админ панель", callback_data="admin_panel")])
+        await safe_edit_message(callback.message, text=text, reply_markup=keyboard)
+    
     await callback.answer()
 
-# ... здесь должны быть все остальные обработчики из предыдущей версии ...
+@dp.message(Command("activate"))
+async def activate_key(message: Message):
+    """Активация ключа"""
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer("🔑 Использование: /activate КЛЮЧ")
+        return
+    
+    key = parts[1].strip()
+    user_id = message.from_user.id
+    
+    if activate_premium_key(key, user_id):
+        await message.answer("✅ Ключ активирован! Теперь у вас есть премиум доступ!")
+    else:
+        await message.answer("❌ Неверный или истекший ключ!")
 
-# ---------- ЗАПУСК БОТА ----------
+# ---------- ЗАПУСК ----------
 async def main():
-    """Запуск бота"""
     print(f"🚀 Запуск бота {BOT_NAME}...")
     print(f"👑 Администраторы: {ADMIN_IDS}")
-    print(f"📁 База данных: {DB_NAME}")
-    print("-" * 50)
     
     init_db()
     print("✅ База данных инициализирована")
     
     await bot.delete_webhook(drop_pending_updates=True)
-    print("✅ Бот готов к работе!")
+    print("✅ Бот готов!")
     
     await dp.start_polling(bot)
 
