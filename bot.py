@@ -14,10 +14,13 @@ from aiogram.fsm.storage.memory import MemoryStorage
 BOT_TOKEN = "8772526252:AAFz_2vhmyWhQTb8Vs7BUtsjulraU7ONf9M"  # Замените на реальный токен бота @Aim_NooB_bot
 BOT_USERNAME = "Aim_NooB_bot"  # Username вашего бота
 
-# Каналы для подписки (добавьте свои каналы)
+# Каналы для подписки (название, ссылка, ID)
 CHANNELS = [
-    "@channel1",  # Замените на реальные каналы
-    "@channel2"   # Например: "@aimnoob_channel", "@aimnoob_news"
+    {
+        "name": "AimNooB АПК ЧИТЫ",
+        "url": "https://t.me/+NwnmmEH8H40yZmIy",
+        "chat_id": "-1003638838896"
+    }
 ]
 
 # Путь к картинке
@@ -165,16 +168,22 @@ def generate_and_send_key(user_id):
         return None
 
 async def check_subscriptions(user_id):
-    """Проверка подписки на каналы"""
+    """Проверка подписки на все каналы"""
+    subscribed_channels = []
+    not_subscribed = []
+    
     for channel in CHANNELS:
         try:
-            member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
-            if member.status in ['left', 'kicked']:
-                return False
+            member = await bot.get_chat_member(chat_id=channel["chat_id"], user_id=user_id)
+            if member.status in ['member', 'administrator', 'creator']:
+                subscribed_channels.append(channel)
+            else:
+                not_subscribed.append(channel)
         except Exception as e:
-            logging.error(f"Ошибка проверки подписки на {channel}: {e}")
-            return False
-    return True
+            logging.error(f"Ошибка проверки подписки на {channel['chat_id']}: {e}")
+            not_subscribed.append(channel)
+    
+    return subscribed_channels, not_subscribed
 
 def activate_premium_key(key, user_id):
     """Активация премиум ключа"""
@@ -212,12 +221,57 @@ def get_cheat_menu(user_id):
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_menu")]
     ])
 
-def get_subscription_keyboard():
-    """Клавиатура для подписки"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Я ПОДПИСАЛСЯ", callback_data="check_subscription")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
-    ])
+def get_subscription_keyboard(not_subscribed_channels):
+    """Клавиатура для подписки с кнопками на каждый канал"""
+    keyboard = []
+    
+    # Добавляем кнопки для каждого канала
+    for channel in not_subscribed_channels:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"📢 Подписаться: {channel['name']}", 
+                url=channel['url']
+            )
+        ])
+    
+    # Добавляем кнопку проверки
+    keyboard.append([InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscription")])
+    keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_subscription_status_keyboard(subscribed, not_subscribed):
+    """Клавиатура со статусом подписки"""
+    keyboard = []
+    
+    # Показываем подписанные каналы (галочки)
+    for channel in subscribed:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"✅ {channel['name']} - Подписан", 
+                callback_data="dummy",
+                url=channel['url']
+            )
+        ])
+    
+    # Показываем неподписанные каналы (кнопки подписки)
+    for channel in not_subscribed:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"❌ {channel['name']} - Подписаться", 
+                url=channel['url']
+            )
+        ])
+    
+    # Добавляем кнопку проверки
+    if not_subscribed:
+        keyboard.append([InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check_subscription")])
+    else:
+        keyboard.append([InlineKeyboardButton(text="✅ Получить чит", callback_data="get_cheat_after_subscribe")])
+    
+    keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 # ---------- ОБРАБОТЧИКИ ----------
 @dp.message(CommandStart())
@@ -266,10 +320,7 @@ async def start_command(message: Message, command: CommandStart):
                 reply_markup=get_main_keyboard()
             )
         else:
-            # Если картинка не найдена
             caption = f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\n"
-            caption += "🎯 Лучшие читы для Standoff 2\n"
-            caption += "🔥 AIMBOT | WALLHACK | ESP | NO RECOIL\n\n"
             caption += "Выберите действие:"
             await message.answer(
                 caption, 
@@ -278,14 +329,13 @@ async def start_command(message: Message, command: CommandStart):
     except Exception as e:
         logging.error(f"Ошибка отправки картинки: {e}")
         await message.answer(
-            f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\n"
-            f"Выберите действие:",
+            f"✨ ДОБРО ПОЖАЛОВАТЬ В {BOT_NAME}! ✨\n\nВыберите действие:",
             reply_markup=get_main_keyboard()
         )
 
 @dp.callback_query(lambda c: c.data == "get_free_cheat")
 async def get_free_cheat(callback: CallbackQuery):
-    """Получение бесплатного чита"""
+    """Получение бесплатного чита - проверка подписки"""
     user_id = callback.from_user.id
     user = get_user(user_id)
     
@@ -306,26 +356,12 @@ async def get_free_cheat(callback: CallbackQuery):
         await callback.answer()
         return
     
-    # Показываем список каналов для подписки
-    channels_text = "📢 Чтобы получить бесплатный чит, подпишитесь на наши каналы:\n\n"
-    for ch in CHANNELS:
-        channels_text += f"📌 {ch}\n"
-    channels_text += "\n✅ После подписки нажмите кнопку 'Я ПОДПИСАЛСЯ'"
+    # Проверяем подписки
+    subscribed, not_subscribed = await check_subscriptions(user_id)
     
-    await callback.message.edit_caption(
-        caption=channels_text,
-        reply_markup=get_subscription_keyboard()
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "check_subscription")
-async def check_subscription(callback: CallbackQuery):
-    """Проверка подписки на каналы"""
-    user_id = callback.from_user.id
-    
-    if await check_subscriptions(user_id):
+    if not not_subscribed:
+        # Если подписан на все каналы
         set_download_link_got(user_id)
-        
         text = f"✅ Подписка подтверждена!\n\n"
         text += f"🔗 Ссылка на скачивание:\n{DOWNLOAD_LINK}\n\n"
         text += f"❗ Для активации чита вам понадобится ключ.\n"
@@ -339,11 +375,95 @@ async def check_subscription(callback: CallbackQuery):
             reply_markup=get_cheat_menu(user_id)
         )
     else:
-        await callback.answer(
-            "❌ Вы не подписаны на все каналы!\n"
-            "Подпишитесь и нажмите кнопку снова.",
-            show_alert=True
+        # Показываем список каналов для подписки
+        text = "📢 ДЛЯ ПОЛУЧЕНИЯ ЧИТА НЕОБХОДИМО ПОДПИСАТЬСЯ НА КАНАЛЫ:\n\n"
+        text += "👇 Нажмите на кнопки ниже, чтобы подписаться:\n\n"
+        
+        for channel in not_subscribed:
+            text += f"❌ {channel['name']}\n"
+        
+        text += f"\n✅ После подписки нажмите 'Проверить подписку'"
+        
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=get_subscription_keyboard(not_subscribed)
         )
+    
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "check_subscription")
+async def check_subscription(callback: CallbackQuery):
+    """Проверка подписки на каналы"""
+    user_id = callback.from_user.id
+    
+    subscribed, not_subscribed = await check_subscriptions(user_id)
+    
+    if not not_subscribed:
+        # Если подписан на все каналы
+        user = get_user(user_id)
+        if user and user[3] == 0:  # Если еще не получал ссылку
+            set_download_link_got(user_id)
+            text = f"✅ ПОЗДРАВЛЯЕМ! ВЫ ПОДПИСАНЫ НА ВСЕ КАНАЛЫ! ✅\n\n"
+            text += f"🔗 Ссылка на скачивание:\n{DOWNLOAD_LINK}\n\n"
+            text += f"❗ Для активации чита вам понадобится ключ.\n"
+            text += f"Получите ключ, пригласив 3 друзей:\n\n"
+            text += f"🔗 {get_referral_link(user_id)}\n\n"
+            text += f"👥 Приглашено: {get_referral_count(user_id)} из 3\n\n"
+            text += f"⏰ Ключ действует 7 дней."
+            
+            await callback.message.edit_caption(
+                caption=text,
+                reply_markup=get_cheat_menu(user_id)
+            )
+        else:
+            await callback.message.edit_caption(
+                caption=f"✅ Вы уже получили доступ к читу!\n\nСсылка: {DOWNLOAD_LINK}",
+                reply_markup=get_cheat_menu(user_id)
+            )
+    else:
+        # Показываем статус подписки с кнопками
+        text = "📢 СТАТУС ПОДПИСКИ:\n\n"
+        
+        for channel in subscribed:
+            text += f"✅ {channel['name']} - Подписан\n"
+        
+        for channel in not_subscribed:
+            text += f"❌ {channel['name']} - НЕ ПОДПИСАН\n"
+        
+        text += "\n👇 Подпишитесь на недостающие каналы и нажмите проверку:"
+        
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=get_subscription_status_keyboard(subscribed, not_subscribed)
+        )
+    
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "get_cheat_after_subscribe")
+async def get_cheat_after_subscribe(callback: CallbackQuery):
+    """Получение чита после успешной подписки"""
+    user_id = callback.from_user.id
+    
+    # Еще раз проверяем подписку
+    subscribed, not_subscribed = await check_subscriptions(user_id)
+    
+    if not not_subscribed:
+        set_download_link_got(user_id)
+        text = f"✅ ПОДПИСКА ПОДТВЕРЖДЕНА! ✅\n\n"
+        text += f"🔗 Ссылка на скачивание:\n{DOWNLOAD_LINK}\n\n"
+        text += f"❗ Для активации чита вам понадобится ключ.\n"
+        text += f"Получите ключ, пригласив 3 друзей:\n\n"
+        text += f"🔗 {get_referral_link(user_id)}\n\n"
+        text += f"👥 Приглашено: {get_referral_count(user_id)} из 3\n\n"
+        text += f"⏰ Ключ действует 7 дней."
+        
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=get_cheat_menu(user_id)
+        )
+    else:
+        await callback.answer("❌ Вы не подписаны на все каналы!", show_alert=True)
+    
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "check_referrals")
@@ -355,29 +475,33 @@ async def check_referrals(callback: CallbackQuery):
     
     if count >= 3:
         if user and user[4] == 1:
-            text = f"✅ Вы уже получили ключ активации!\n\n"
+            text = f"✅ ВЫ УЖЕ ПОЛУЧИЛИ КЛЮЧ АКТИВАЦИИ!\n\n"
             text += f"👥 Приглашено друзей: {count}\n"
             text += f"🔑 Ключ был отправлен вам в личные сообщения."
         else:
-            text = f"🎉 Поздравляем! Вы пригласили {count} друзей!\n\n"
+            text = f"🎉 ПОЗДРАВЛЯЕМ! ВЫ ПРИГЛАСИЛИ {count} ДРУЗЕЙ! 🎉\n\n"
             text += f"🔑 Генерирую ключ активации..."
             await callback.message.answer(text)
             
             key = generate_and_send_key(user_id)
             if key:
-                text = f"✅ Ваш ключ активации:\n\n"
+                text = f"✅ ВАШ КЛЮЧ АКТИВАЦИИ:\n\n"
                 text += f"🔑 `{key}`\n\n"
                 text += f"⏰ Действителен 7 дней\n"
-                text += f"Используйте его для активации чита."
+                text += f"Используйте его для активации чита.\n\n"
+                text += f"💡 Команда для активации: /activate {key}"
                 await callback.message.answer(text, parse_mode="Markdown")
             return
     else:
-        text = f"👥 Приглашено друзей: {count} из 3\n\n"
-        text += f"📢 Пригласите еще {3 - count} друзей, чтобы получить ключ активации!\n\n"
-        text += f"🔗 Ваша реферальная ссылка:\n{get_referral_link(user_id)}\n\n"
-        text += f"💡 Отправьте ссылку друзьям - после их регистрации счетчик увеличится."
+        text = f"👥 СТАТИСТИКА РЕФЕРАЛОВ:\n\n"
+        text += f"📊 Приглашено друзей: {count} из 3\n"
+        text += f"📢 Осталось пригласить: {3 - count}\n\n"
+        text += f"🔗 ВАША РЕФЕРАЛЬНАЯ ССЫЛКА:\n"
+        text += f"`{get_referral_link(user_id)}`\n\n"
+        text += f"💡 Отправьте ссылку друзьям - после их регистрации счетчик увеличится.\n"
+        text += f"🎁 За 3 приглашенных друзей вы получите ключ активации на 7 дней!"
     
-    await callback.message.answer(text)
+    await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "copy_link")
@@ -386,10 +510,11 @@ async def copy_link(callback: CallbackQuery):
     user_id = callback.from_user.id
     link = get_referral_link(user_id)
     
-    text = f"🔗 Ваша реферальная ссылка:\n\n"
+    text = f"🔗 ВАША РЕФЕРАЛЬНАЯ ССЫЛКА:\n\n"
     text += f"`{link}`\n\n"
     text += f"📤 Отправьте её друзьям, чтобы пригласить их.\n"
-    text += f"👥 Пригласите 3 друзей и получите ключ активации!"
+    text += f"👥 Пригласите 3 друзей и получите ключ активации!\n\n"
+    text += f"🎁 Бонус: {3 - get_referral_count(user_id)} друг(а) до получения ключа!"
     
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
@@ -399,7 +524,7 @@ async def refresh_menu(callback: CallbackQuery):
     """Обновление меню"""
     user_id = callback.from_user.id
     
-    text = f"✅ Ваш доступ к читу активен!\n\n"
+    text = f"✅ ВАШ ДОСТУП К ЧИТУ АКТИВЕН!\n\n"
     text += f"🔗 Ссылка на скачивание:\n{DOWNLOAD_LINK}\n\n"
     text += f"👥 Приглашено друзей: {get_referral_count(user_id)} из 3\n\n"
     text += f"🔗 Реферальная ссылка:\n{get_referral_link(user_id)}\n\n"
@@ -415,17 +540,22 @@ async def refresh_menu(callback: CallbackQuery):
 async def buy_premium(callback: CallbackQuery):
     """Покупка премиум версии"""
     text = f"⭐ ПРЕМИУМ ВЕРСИЯ {BOT_NAME} ⭐\n\n"
-    text += "🔥 Расширенные возможности:\n"
-    text += "• AIMBOT с настройками\n"
-    text += "• ESP через стены\n"
+    text += "🔥 РАСШИРЕННЫЕ ВОЗМОЖНОСТИ:\n"
+    text += "• AIMBOT с точной настройкой\n"
+    text += "• ESP через стены (WALLHACK)\n"
     text += "• NO RECOIL + NO SPREAD\n"
-    text += "• Приоритетная поддержка\n"
+    text += "• TRIGGER BOT\n"
+    text += "• SKELETON ESP\n"
+    text += "• Приоритетная поддержка 24/7\n"
     text += "• Без рекламы и ожидания\n\n"
-    text += "💰 Стоимость: 499 ₽ / месяц\n\n"
-    text += "📦 Способы оплаты:\n"
-    text += "• Карты РФ\n"
-    text += "• Криптовалюта\n\n"
-    text += "💬 Для покупки свяжитесь с менеджером:\n"
+    text += "💰 СТОИМОСТЬ: 499 ₽ / месяц\n"
+    text += "💎 1299 ₽ / 3 месяца (скидка 15%)\n"
+    text += "👑 2499 ₽ / 6 месяцев (скидка 20%)\n\n"
+    text += "📦 СПОСОБЫ ОПЛАТЫ:\n"
+    text += "• Карты РФ (Сбер, Тинькофф)\n"
+    text += "• Криптовалюта (USDT, BTC)\n"
+    text += "• Qiwi, YooMoney\n\n"
+    text += "💬 ДЛЯ ПОКУПКИ СВЯЖИТЕСЬ С МЕНЕДЖЕРОМ:\n"
     text += "@AimNoobSupport"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -457,7 +587,6 @@ async def back_to_main(callback: CallbackQuery):
                 reply_markup=get_main_keyboard()
             )
     except Exception:
-        # Если не удалось отредактировать, отправляем новое сообщение
         await callback.message.delete()
         if os.path.exists(IMAGE_PATH):
             photo = FSInputFile(IMAGE_PATH)
@@ -473,14 +602,22 @@ async def back_to_main(callback: CallbackQuery):
             )
     await callback.answer()
 
+@dp.callback_query(lambda c: c.data == "dummy")
+async def dummy_callback(callback: CallbackQuery):
+    """Заглушка для кнопок без действия"""
+    await callback.answer()
+
 @dp.message(Command("activate"))
 async def activate_key(message: Message):
     """Активация премиум ключа"""
     parts = message.text.split()
     if len(parts) != 2:
         await message.answer(
-            "🔑 Использование: /activate КЛЮЧ\n\n"
-            "Пример: /activate ABC123XYZ789"
+            "🔑 ИСПОЛЬЗОВАНИЕ: /activate КЛЮЧ\n\n"
+            "📝 Пример: /activate ABC123XYZ789\n\n"
+            "💡 Где взять ключ?\n"
+            "• Пригласите 3 друзей по вашей реферальной ссылке\n"
+            "• Купите премиум версию у @AimNoobSupport"
         )
         return
     
@@ -490,15 +627,24 @@ async def activate_key(message: Message):
     if activate_premium_key(key, user_id):
         await message.answer(
             "✅ КЛЮЧ УСПЕШНО АКТИВИРОВАН! ✅\n\n"
-            "🎉 Поздравляем! Теперь у вас есть доступ ко всем премиум функциям чита!\n\n"
-            "🔥 Наслаждайтесь игрой с AimNoob Cheats!"
+            "🎉 ПОЗДРАВЛЯЕМ! Теперь у вас есть доступ ко всем ПРЕМИУМ функциям!\n\n"
+            "🔥 ДОСТУПНЫЕ ФУНКЦИИ:\n"
+            "• AIMBOT с настройкой\n"
+            "• WALLHACK (ESP через стены)\n"
+            "• NO RECOIL + NO SPREAD\n"
+            "• TRIGGER BOT\n"
+            "• SKELETON ESP\n\n"
+            "💪 Наслаждайтесь игрой с AimNoob Cheats!"
         )
     else:
         await message.answer(
             "❌ НЕВЕРНЫЙ ИЛИ ИСТЕКШИЙ КЛЮЧ ❌\n\n"
             "🔑 Проверьте правильность ввода ключа\n"
             "⏰ Ключ действителен 7 дней\n\n"
-            "💡 Получите новый ключ, пригласив 3 друзей!"
+            "💡 ПОЛУЧИТЕ НОВЫЙ КЛЮЧ:\n"
+            "• Пригласите 3 друзей по реферальной ссылке\n"
+            "• Купите премиум у @AimNoobSupport\n\n"
+            f"🔗 Ваша реферальная ссылка: {get_referral_link(user_id)}"
         )
 
 @dp.message(Command("help"))
@@ -508,16 +654,18 @@ async def help_command(message: Message):
     text += "🔹 /start - Главное меню\n"
     text += "🔹 /activate КЛЮЧ - Активация ключа\n"
     text += "🔹 /help - Это сообщение\n\n"
-    text += "💡 Как получить чит:\n"
-    text += "1. Нажмите 'Получить бесплатный чит'\n"
-    text += "2. Подпишитесь на наши каналы\n"
-    text += "3. Получите ссылку на скачивание\n"
-    text += "4. Пригласите 3 друзей для ключа активации\n\n"
-    text += "⭐ Премиум функции:\n"
+    text += "💡 КАК ПОЛУЧИТЬ ЧИТ:\n"
+    text += "1️⃣ Нажмите 'Получить бесплатный чит'\n"
+    text += "2️⃣ Подпишитесь на все каналы (кнопками)\n"
+    text += "3️⃣ Нажмите 'Проверить подписку'\n"
+    text += "4️⃣ Получите ссылку на скачивание\n"
+    text += "5️⃣ Пригласите 3 друзей для ключа активации\n\n"
+    text += "⭐ ПРЕМИУМ ФУНКЦИИ:\n"
     text += "• Расширенный AIMBOT\n"
     text += "• ESP через стены\n"
+    text += "• NO RECOIL\n"
     text += "• Приоритетная поддержка\n\n"
-    text += "💬 По вопросам: @AimNoobSupport"
+    text += "💬 ПО ВОПРОСАМ: @AimNoobSupport"
     
     await message.answer(text)
 
@@ -527,16 +675,18 @@ async def main():
     print(f"🚀 Запуск бота {BOT_NAME}...")
     print(f"📁 База данных: {DB_NAME}")
     print(f"🖼️ Картинка: {IMAGE_PATH if os.path.exists(IMAGE_PATH) else 'Не найдена'}")
-    print(f"📢 Каналы для подписки: {', '.join(CHANNELS)}")
+    print(f"📢 Каналы для подписки:")
+    for channel in CHANNELS:
+        print(f"   • {channel['name']}: {channel['chat_id']}")
     print(f"🔗 Ссылка на скачивание: {DOWNLOAD_LINK}")
     print("-" * 50)
     
     init_db()
     print("✅ База данных инициализирована")
     
-    # Устанавливаем webhook (не нужно для polling)
     await bot.delete_webhook(drop_pending_updates=True)
     print("✅ Бот готов к работе!")
+    print("🎯 AimNoob Cheats Bot запущен!")
     
     await dp.start_polling(bot)
 
