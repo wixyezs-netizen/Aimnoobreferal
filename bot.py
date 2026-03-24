@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.exceptions import TelegramBadRequest
 
 # ---------- КОНФИГУРАЦИЯ ----------
 BOT_TOKEN = "8772526252:AAFz_2vhmyWhQTb8Vs7BUtsjulraU7ONf9M"  # Замените на реальный токен бота @Aim_NooB_bot
@@ -17,10 +18,11 @@ BOT_USERNAME = "Aim_NooB_bot"  # Username вашего бота
 # Каналы для подписки (название, ссылка, ID)
 CHANNELS = [
     {
-        "name": "AimNooB АПК ЧИТЫ",
+        "name": "Читы стандофф 2",
         "url": "https://t.me/+Tvo1qkA3bJdmNWJh",
-        "chat_id": "-1003638838896"
+        "chat_id": "-1003799166773"
     }
+    
 ]
 
 # Путь к картинке
@@ -174,13 +176,20 @@ async def check_subscriptions(user_id):
     
     for channel in CHANNELS:
         try:
+            # Пробуем получить информацию о участнике
             member = await bot.get_chat_member(chat_id=channel["chat_id"], user_id=user_id)
+            
+            # Проверяем статус участника
             if member.status in ['member', 'administrator', 'creator']:
                 subscribed_channels.append(channel)
+                logging.info(f"User {user_id} subscribed to {channel['chat_id']}")
             else:
                 not_subscribed.append(channel)
+                logging.info(f"User {user_id} NOT subscribed to {channel['chat_id']}, status: {member.status}")
+                
         except Exception as e:
-            logging.error(f"Ошибка проверки подписки на {channel['chat_id']}: {e}")
+            # Если ошибка - считаем что не подписан
+            logging.error(f"Error checking subscription for {channel['chat_id']}: {e}")
             not_subscribed.append(channel)
     
     return subscribed_channels, not_subscribed
@@ -244,16 +253,6 @@ def get_subscription_status_keyboard(subscribed, not_subscribed):
     """Клавиатура со статусом подписки"""
     keyboard = []
     
-    # Показываем подписанные каналы (галочки)
-    for channel in subscribed:
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"✅ {channel['name']} - Подписан", 
-                callback_data="dummy",
-                url=channel['url']
-            )
-        ])
-    
     # Показываем неподписанные каналы (кнопки подписки)
     for channel in not_subscribed:
         keyboard.append([
@@ -263,15 +262,29 @@ def get_subscription_status_keyboard(subscribed, not_subscribed):
             )
         ])
     
-    # Добавляем кнопку проверки
+    # Добавляем кнопку проверки если есть неподписанные
     if not_subscribed:
-        keyboard.append([InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check_subscription")])
+        keyboard.append([InlineKeyboardButton(text="🔄 Проверить снова", callback_data="check_subscription")])
     else:
         keyboard.append([InlineKeyboardButton(text="✅ Получить чит", callback_data="get_cheat_after_subscribe")])
     
     keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+async def safe_edit_caption(message, caption, reply_markup):
+    """Безопасное редактирование сообщения"""
+    try:
+        await message.edit_caption(
+            caption=caption,
+            reply_markup=reply_markup
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            # Игнорируем ошибку, если сообщение не изменилось
+            pass
+        else:
+            raise e
 
 # ---------- ОБРАБОТЧИКИ ----------
 @dp.message(CommandStart())
@@ -349,9 +362,10 @@ async def get_free_cheat(callback: CallbackQuery):
         text += f"👥 Приглашено: {get_referral_count(user_id)} из 3\n\n"
         text += f"⏰ Ключ действует 7 дней."
         
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=get_cheat_menu(user_id)
+        await safe_edit_caption(
+            callback.message,
+            text,
+            get_cheat_menu(user_id)
         )
         await callback.answer()
         return
@@ -370,9 +384,10 @@ async def get_free_cheat(callback: CallbackQuery):
         text += f"👥 Приглашено: {get_referral_count(user_id)} из 3\n\n"
         text += f"⏰ Ключ действует 7 дней."
         
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=get_cheat_menu(user_id)
+        await safe_edit_caption(
+            callback.message,
+            text,
+            get_cheat_menu(user_id)
         )
     else:
         # Показываем список каналов для подписки
@@ -384,9 +399,10 @@ async def get_free_cheat(callback: CallbackQuery):
         
         text += f"\n✅ После подписки нажмите 'Проверить подписку'"
         
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=get_subscription_keyboard(not_subscribed)
+        await safe_edit_caption(
+            callback.message,
+            text,
+            get_subscription_keyboard(not_subscribed)
         )
     
     await callback.answer()
@@ -395,6 +411,9 @@ async def get_free_cheat(callback: CallbackQuery):
 async def check_subscription(callback: CallbackQuery):
     """Проверка подписки на каналы"""
     user_id = callback.from_user.id
+    
+    # Отправляем уведомление о проверке
+    await callback.answer("🔍 Проверяю подписки...")
     
     subscribed, not_subscribed = await check_subscriptions(user_id)
     
@@ -411,14 +430,16 @@ async def check_subscription(callback: CallbackQuery):
             text += f"👥 Приглашено: {get_referral_count(user_id)} из 3\n\n"
             text += f"⏰ Ключ действует 7 дней."
             
-            await callback.message.edit_caption(
-                caption=text,
-                reply_markup=get_cheat_menu(user_id)
+            await safe_edit_caption(
+                callback.message,
+                text,
+                get_cheat_menu(user_id)
             )
         else:
-            await callback.message.edit_caption(
-                caption=f"✅ Вы уже получили доступ к читу!\n\nСсылка: {DOWNLOAD_LINK}",
-                reply_markup=get_cheat_menu(user_id)
+            await safe_edit_caption(
+                callback.message,
+                f"✅ Вы уже получили доступ к читу!\n\nСсылка: {DOWNLOAD_LINK}",
+                get_cheat_menu(user_id)
             )
     else:
         # Показываем статус подписки с кнопками
@@ -430,11 +451,15 @@ async def check_subscription(callback: CallbackQuery):
         for channel in not_subscribed:
             text += f"❌ {channel['name']} - НЕ ПОДПИСАН\n"
         
-        text += "\n👇 Подпишитесь на недостающие каналы и нажмите проверку:"
+        if not_subscribed:
+            text += "\n👇 Подпишитесь на недостающие каналы и нажмите 'Проверить снова':"
+        else:
+            text += "\n✅ Вы подписаны на все каналы! Нажмите 'Получить чит'."
         
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=get_subscription_status_keyboard(subscribed, not_subscribed)
+        await safe_edit_caption(
+            callback.message,
+            text,
+            get_subscription_status_keyboard(subscribed, not_subscribed)
         )
     
     await callback.answer()
@@ -443,6 +468,9 @@ async def check_subscription(callback: CallbackQuery):
 async def get_cheat_after_subscribe(callback: CallbackQuery):
     """Получение чита после успешной подписки"""
     user_id = callback.from_user.id
+    
+    # Отправляем уведомление о проверке
+    await callback.answer("🔍 Проверяю подписки...")
     
     # Еще раз проверяем подписку
     subscribed, not_subscribed = await check_subscriptions(user_id)
@@ -457,12 +485,13 @@ async def get_cheat_after_subscribe(callback: CallbackQuery):
         text += f"👥 Приглашено: {get_referral_count(user_id)} из 3\n\n"
         text += f"⏰ Ключ действует 7 дней."
         
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=get_cheat_menu(user_id)
+        await safe_edit_caption(
+            callback.message,
+            text,
+            get_cheat_menu(user_id)
         )
     else:
-        await callback.answer("❌ Вы не подписаны на все каналы!", show_alert=True)
+        await callback.answer("❌ Вы не подписаны на все каналы! Подпишитесь и нажмите снова.", show_alert=True)
     
     await callback.answer()
 
@@ -530,9 +559,10 @@ async def refresh_menu(callback: CallbackQuery):
     text += f"🔗 Реферальная ссылка:\n{get_referral_link(user_id)}\n\n"
     text += f"💡 Пригласите 3 друзей и получите ключ активации!"
     
-    await callback.message.edit_caption(
-        caption=text,
-        reply_markup=get_cheat_menu(user_id)
+    await safe_edit_caption(
+        callback.message,
+        text,
+        get_cheat_menu(user_id)
     )
     await callback.answer()
 
@@ -587,6 +617,7 @@ async def back_to_main(callback: CallbackQuery):
                 reply_markup=get_main_keyboard()
             )
     except Exception:
+        # Если не удалось отредактировать, отправляем новое сообщение
         await callback.message.delete()
         if os.path.exists(IMAGE_PATH):
             photo = FSInputFile(IMAGE_PATH)
