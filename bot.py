@@ -18,7 +18,7 @@ BOT_USERNAME = "Aim_NooB_bot"  # Username вашего бота
 CHANNELS = [
     {
         "name": "AimNooB АПК ЧИТЫ",
-        "url": "https://t.me/+NwnmmEH8H40yZmIy",
+        "url": "https://t.me/+Tvo1qkA3bJdmNWJh",
         "chat_id": "-1003638838896"
     }
 ]
