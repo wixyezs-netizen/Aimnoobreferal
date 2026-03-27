@@ -39,7 +39,7 @@ CATEGORIES = {
         "products": {
             "premium_1m": {
                 "name": "Premium 1 месяц",
-                "price": 299,
+                "price": 1,
                 "description": "Telegram Premium подписка на 1 месяц.\n"
                                "• Уникальные стикеры и реакции\n"
                                "• Без рекламы\n"
@@ -49,19 +49,19 @@ CATEGORIES = {
             },
             "premium_3m": {
                 "name": "Premium 3 месяца",
-                "price": 799,
+                "price": 399,
                 "description": "Telegram Premium подписка на 3 месяца.\nСкидка 11%!",
                 "delivery_type": "manual"
             },
             "premium_6m": {
                 "name": "Premium 6 месяцев",
-                "price": 1499,
+                "price": 699,
                 "description": "Telegram Premium подписка на 6 месяцев.\nСкидка 17%!",
                 "delivery_type": "manual"
             },
             "premium_12m": {
                 "name": "Premium 12 месяцев",
-                "price": 2699,
+                "price": 1200,
                 "description": "Telegram Premium подписка на 12 месяцев.\nСкидка 25%!",
                 "delivery_type": "manual"
             },
@@ -73,28 +73,28 @@ CATEGORIES = {
         "products": {
             "stars_50": {
                 "name": "50 Stars",
-                "price": 75,
+                "price": 45,
                 "description": "50 Telegram Stars на ваш аккаунт.",
                 "stars_amount": 50,
                 "delivery_type": "manual"
             },
             "stars_100": {
                 "name": "100 Stars",
-                "price": 140,
+                "price": 85,
                 "description": "100 Telegram Stars на ваш аккаунт.\nСкидка 7%!",
                 "stars_amount": 100,
                 "delivery_type": "manual"
             },
             "stars_250": {
                 "name": "250 Stars",
-                "price": 330,
+                "price": 150,
                 "description": "250 Telegram Stars на ваш аккаунт.\nСкидка 12%!",
                 "stars_amount": 250,
                 "delivery_type": "manual"
             },
             "stars_500": {
                 "name": "500 Stars",
-                "price": 620,
+                "price": 250,
                 "description": "500 Telegram Stars на ваш аккаунт.\nСкидка 17%!",
                 "stars_amount": 500,
                 "delivery_type": "manual"
